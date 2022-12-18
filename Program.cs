@@ -4,7 +4,9 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
+using System.Xml.Schema;
 
 const char Separator = ';';
 const string RowJoinSeparator = "\";\"";
@@ -16,20 +18,36 @@ Console.WriteLine("Processing files:");
 Console.WriteLine("Input: {0}", inputPath);
 Console.WriteLine("Output: {0}", outputPath);
 
-using var inputFile = File.OpenRead(inputPath);
+using var reader = XmlReader.Create(File.OpenRead(inputPath),
+    new XmlReaderSettings
+    {
+        CloseInput = true,
+        Async = true,
+        ConformanceLevel = ConformanceLevel.Fragment,
+        CheckCharacters = false,
+        ValidationType = ValidationType.None,
+        ValidationFlags = XmlSchemaValidationFlags.None,
+        IgnoreProcessingInstructions = true,
+    });
 
-var document = await XDocument.LoadAsync(inputFile, LoadOptions.SetLineInfo, CancellationToken.None);
+var document = await XDocument.LoadAsync(reader, LoadOptions.SetLineInfo, CancellationToken.None);
 
-var allEvents = document.Root!.Elements().ToList();
+var allElements = document.Root!.Elements().ToList();
 
-if (allEvents.Any(e => e.Name.LocalName != "Event"))
-    throw new InvalidOperationException("Not All elements are 'Event' elements (under the root)");
+HashSet<string> validElements= new(new[] { "Event", "Record" }, StringComparer.OrdinalIgnoreCase);
 
-var columns = allEvents.SelectMany(FlattenSubelementNames).Distinct().ToList();
+var invalidElements = allElements.Where(e => !validElements.Contains(e.Name.LocalName)).ToList();
+if (invalidElements.Count > 0)
+{
+    throw new InvalidOperationException(
+        $"Not All elements are {string.Join(',', validElements)} elements (under the root): {string.Join(',', invalidElements.Select(e => $"{e.Name.LocalName}: {((IXmlLineInfo)e).LineNumber}, {((IXmlLineInfo)e).LinePosition}"))}");
+}
 
-Console.WriteLine("Collected data columns: {0}, rows: {1}", columns.Count, allEvents.Count);
+var columns = allElements.SelectMany(FlattenSubelementNames).Distinct().ToList();
 
-var rows = allEvents.Select(ToRow);
+Console.WriteLine("Collected data columns: {0}, rows: {1}", columns.Count, allElements.Count);
+
+var rows = allElements.Select(ToRow);
 
 //CreateExcelFile(outputPath, Path.GetFileNameWithoutExtension(outputPath), sheetData => PrepareData(sheetData, rows, columns));
 
@@ -70,7 +88,7 @@ static void CreateExcelFile(string filepath, string sheetName, Action<SheetData>
     // Add Sheets to the Workbook.
     Sheets sheets = workbookpart.Workbook.AppendChild(new Sheets());
     // Append a new worksheet and associate it with the workbook.
-    Sheet sheet = new ()
+    Sheet sheet = new()
     {
         Id = workbookpart.GetIdOfPart(worksheetPart),
         SheetId = 1,
