@@ -34,7 +34,7 @@ var document = await XDocument.LoadAsync(reader, LoadOptions.SetLineInfo, Cancel
 
 var allElements = document.Root!.Elements().ToList();
 
-HashSet<string> validElements= new(new[] { "Event", "Record" }, StringComparer.OrdinalIgnoreCase);
+HashSet<string> validElements = new(new[] { "Event", "Record" }, StringComparer.OrdinalIgnoreCase);
 
 var invalidElements = allElements.Where(e => !validElements.Contains(e.Name.LocalName)).ToList();
 if (invalidElements.Count > 0)
@@ -143,26 +143,40 @@ static IEnumerable<string> FlattenSubelementNames(XElement eventElement)
 {
     return eventElement.Descendants().Where(CanBeFlattened).SelectMany(FlattenSingleElement);
 
-    static IEnumerable<string> FlattenSingleElement(XElement eventSubelement)
+    static IEnumerable<string> FlattenSingleElement(XElement subelement)
     {
-        if (eventSubelement.IsEmpty)
+        if (subelement.IsEmpty)
         {
-            foreach (XAttribute xAttribute in eventSubelement.Attributes())
+            foreach (XAttribute xAttribute in subelement.Attributes())
             {
-                yield return $"{eventSubelement.Name.LocalName}_{xAttribute.Name.LocalName}";
+                yield return $"{subelement.Name.LocalName}_{xAttribute.Name.LocalName}";
             }
         }
         else
         {
-            if (eventSubelement.Parent.Elements(eventSubelement.Name).Count() > 1)
+            if (subelement.Parent.Elements(subelement.Name).Count() > 1)
             {
-                //       if (StringComparer.OrdinalIgnoreCase.Equals(eventSubelement.Name.LocalName, "data"))
-                var nameAttr = eventSubelement.Attribute("Name")!;
-                yield return $"{eventSubelement!.Parent!.Name.LocalName}_{nameAttr.Value}";
+                if (StringComparer.OrdinalIgnoreCase.Equals(subelement.Name.LocalName, "Data"))
+                {
+                    var nameAttr = subelement.Attribute("Name")!;
+                    yield return $"{subelement!.Parent!.Name.LocalName}_{nameAttr.Value}";
+                }
+                else
+                {
+                    yield return $"{subelement!.Parent!.Name.LocalName}_{subelement.Name.LocalName}";
+                }
             }
             else
             {
-                yield return $"{eventSubelement!.Parent!.Name.LocalName}_{eventSubelement.Name.LocalName}";
+                if (StringComparer.OrdinalIgnoreCase.Equals(subelement.Parent.Name.LocalName, "Substitution"))
+                {
+                    var indexAttr = subelement.Parent.Attribute("index")!;
+                    yield return $"{subelement!.Parent!.Name.LocalName}_index_{indexAttr.Value}_{subelement.Name.LocalName}";
+                }
+                else
+                {
+                    yield return $"{subelement!.Parent!.Name.LocalName}_{subelement.Name.LocalName}";
+                }
             }
         }
     }
@@ -174,26 +188,44 @@ static SimpleRow ToRow(XElement eventElement)
 
     return new SimpleRow(values);
 
-    static Dictionary<string, string> FlattenSingleElement(Dictionary<string, string> values, XElement eventSubelement)
+    static Dictionary<string, string> FlattenSingleElement(Dictionary<string, string> values, XElement subelement)
     {
-        if (eventSubelement.IsEmpty)
+        if (subelement.IsEmpty)
         {
-            foreach (XAttribute xAttribute in eventSubelement.Attributes())
+            foreach (XAttribute xAttribute in subelement.Attributes())
             {
-                values.Add($"{eventSubelement.Name.LocalName}_{xAttribute.Name.LocalName}", SanitizeValue(xAttribute.Value));
+                values.Add($"{subelement.Name.LocalName}_{xAttribute.Name.LocalName}", SanitizeValue(xAttribute.Value));
             }
         }
         else
         {
-            if (eventSubelement.Parent.Elements(eventSubelement.Name).Count() > 1)
+            if (subelement.Parent!.Elements(subelement.Name).Count() > 1)
             {
-                //       if (StringComparer.OrdinalIgnoreCase.Equals(eventSubelement.Name.LocalName, "data"))
-                var nameAttr = eventSubelement.Attribute("Name")!;
-                values.Add($"{eventSubelement.Parent!.Name.LocalName}_{nameAttr.Value}", SanitizeValue(eventSubelement.Value));
+                if (StringComparer.OrdinalIgnoreCase.Equals(subelement.Name.LocalName, "Data"))
+                {
+                    var nameAttr = subelement.Attribute("Name")!;
+                    values.Add($"{subelement.Parent!.Name.LocalName}_{nameAttr.Value}",
+                        SanitizeValue(subelement.Value));
+                }
+                else
+                {
+                    values.Add($"{subelement!.Parent!.Name.LocalName}_{subelement.Name.LocalName}", SanitizeValue(subelement.Value));
+                }
             }
             else
             {
-                values.Add($"{eventSubelement!.Parent!.Name.LocalName}_{eventSubelement.Name.LocalName}", SanitizeValue(eventSubelement.Value));
+                if (StringComparer.OrdinalIgnoreCase.Equals(subelement.Parent.Name.LocalName, "Substitution"))
+                {
+                    var indexAttr = subelement.Parent.Attribute("index")!;
+                    values.Add(
+                        $"{subelement!.Parent!.Name.LocalName}_index_{indexAttr.Value}_{subelement.Name.LocalName}",
+                        SanitizeValue(subelement.Value));
+                }
+                else
+                {
+                    values.Add($"{subelement!.Parent!.Name.LocalName}_{subelement.Name.LocalName}",
+                        SanitizeValue(subelement.Value));
+                }
             }
         }
 
